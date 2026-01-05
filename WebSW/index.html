@@ -139,12 +139,54 @@
             color: #666;
             font-size: 0.9em;
         }
+
+        .version-selector {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .version-selector label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+
+        .version-selector select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            background: white;
+            color: #333;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+        }
+
+        .version-selector select:hover {
+            border-color: #667eea;
+        }
+
+        .version-selector select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🔧 SolidWorks Controller</h1>
         <p class="subtitle">Open and control SolidWorks from your browser</p>
+        
+        <div class="version-selector">
+            <label for="versionSelect">Select SolidWorks Version:</label>
+            <select id="versionSelect">
+                <option value="">Loading versions...</option>
+            </select>
+        </div>
         
         <div class="button-group">
             <button id="openBtn" onclick="openSolidWorks()">
@@ -185,8 +227,48 @@
             button.innerHTML = text;
         }
 
+        async function loadAvailableVersions() {
+            try {
+                const response = await fetch(`${apiBaseUrl}/AvailableVersions`, {
+                    method: 'GET'
+                });
+
+                const data = await response.json();
+                const versionSelect = document.getElementById('versionSelect');
+
+                if (data.success && data.versions && data.versions.length > 0) {
+                    versionSelect.innerHTML = '';
+                    data.versions.forEach(version => {
+                        const option = document.createElement('option');
+                        option.value = version;
+                        option.textContent = `SolidWorks ${version}`;
+                        versionSelect.appendChild(option);
+                    });
+                    // Select the first version by default
+                    if (data.versions.length > 0) {
+                        versionSelect.value = data.versions[0];
+                    }
+                } else {
+                    versionSelect.innerHTML = '<option value="">No versions found</option>';
+                    showStatus('No SolidWorks versions found. Please ensure SolidWorks is installed.', 'error');
+                }
+            } catch (error) {
+                const versionSelect = document.getElementById('versionSelect');
+                versionSelect.innerHTML = '<option value="">Error loading versions</option>';
+                showStatus(`Error loading versions: ${error.message}`, 'error');
+            }
+        }
+
         async function openSolidWorks() {
             const btn = document.getElementById('openBtn');
+            const versionSelect = document.getElementById('versionSelect');
+            const selectedVersion = versionSelect.value;
+
+            if (!selectedVersion) {
+                showStatus('Please select a SolidWorks version', 'error');
+                return;
+            }
+
             showLoading(btn);
             showStatus('Opening SolidWorks...', 'info');
 
@@ -195,7 +277,10 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({
+                        version: selectedVersion
+                    })
                 });
 
                 const data = await response.json();
@@ -275,8 +360,9 @@
             }
         }
 
-        // Check status on page load
+        // Load versions and check status on page load
         window.addEventListener('load', function() {
+            loadAvailableVersions();
             checkStatus();
         });
     </script>

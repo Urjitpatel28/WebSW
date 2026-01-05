@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using SolidWorks.Interop.sldworks;
 
 namespace WebSW
@@ -9,37 +11,81 @@ namespace WebSW
         /// <summary>
         /// Opens the SolidWorks application.
         /// </summary>
+        /// <param name="version">SolidWorks version (e.g., "2025", "2024"). If null, uses default version.</param>
         /// <returns>The SolidWorks application object, or null if failed.</returns>
-        public static ISldWorks OpenSolidWorks()
+        public static ISldWorks OpenSolidWorks(string version = null)
         {
             ISldWorks swApp = null;
             
             try
             {
-                // Try to get an existing running instance of SolidWorks
+                // If version is provided, use it; otherwise try to find any installed version
+                if (string.IsNullOrEmpty(version))
+                {
+                    var availableVersions = RegistryHelper.GetAvailableVersions();
+                    if (availableVersions.Count > 0)
+                    {
+                        version = availableVersions[0]; // Use the first available version
+                    }
+                    else
+                    {
+                        version = "2023"; // Default fallback
+                    }
+                }
+
+                string progIdSuffix = RegistryHelper.GetProgIdSuffix(version);
+                string progId = $"SldWorks.Application.{progIdSuffix}";
+
+                // Step 1: Try to attach to existing instance
                 try
                 {
-                    // "SldWorks.Application.33" is for SolidWorks 2021
-                    // For other versions, change the number:
-                    // 30 = 2018, 31 = 2019, 32 = 2020, 33 = 2021, 34 = 2022, 35 = 2023, 36 = 2024
-                    swApp = (ISldWorks)Marshal.GetActiveObject("SldWorks.Application.33");
-                    Console.WriteLine("Connected to existing SolidWorks instance.");
+                    swApp = (ISldWorks)Marshal.GetActiveObject(progId);
+                    Console.WriteLine($"Connected to existing SolidWorks instance (Version {version}).");
+                    swApp.Visible = true;
+                    return swApp;
                 }
                 catch (COMException)
                 {
-                    // If no existing instance found, create a new one
-                    Console.WriteLine("No existing SolidWorks instance found. Creating new instance...");
-                    swApp = new SldWorks();
-                    
-                    // Make SolidWorks visible
-                    swApp.Visible = true;
-                    
-                    Console.WriteLine("New SolidWorks instance created.");
+                    Console.WriteLine($"No running SolidWorks instance found for version {version}. Proceeding to launch.");
                 }
-                
+
+                // Step 2: Launch SolidWorks via EXE
+                string solidWorksPath = RegistryHelper.GetSolidWorksPath(version);
+
+                if (string.IsNullOrEmpty(solidWorksPath))
+                {
+                    Console.WriteLine($"SolidWorks installation path not found for version {version}.");
+                    return null;
+                }
+
+                Console.WriteLine($"Starting SolidWorks from: {solidWorksPath}");
+                Process.Start(solidWorksPath);
+
+                // Step 3: Wait for registration and try to attach via GetActiveObject
+                int retryCount = 0;
+                while (swApp == null && retryCount < 12)
+                {
+                    Thread.Sleep(5000); // Wait 5 seconds
+                    try
+                    {
+                        swApp = (ISldWorks)Marshal.GetActiveObject(progId);
+                    }
+                    catch (COMException)
+                    {
+                        Console.WriteLine($"Waiting for COM registration... Retry {retryCount + 1}");
+                    }
+                    retryCount++;
+                }
+
+                // Step 4: Return result
                 if (swApp != null)
                 {
-                    Console.WriteLine($"SolidWorks started successfully!");
+                    swApp.Visible = true;
+                    Console.WriteLine($"SolidWorks started and registered successfully (Version {version}).");
+                }
+                else
+                {
+                    Console.WriteLine($"Failed to connect to SolidWorks after multiple retries (Version {version}).");
                 }
             }
             catch (Exception ex)

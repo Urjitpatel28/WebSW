@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Web.Http;
@@ -11,9 +12,33 @@ namespace WebSW.Controllers
         private static ISldWorks _swApp = null;
         private static readonly object _lockObject = new object();
 
+        [HttpGet]
+        [Route("api/SolidWorks/AvailableVersions")]
+        public HttpResponseMessage GetAvailableVersions()
+        {
+            try
+            {
+                var versions = RegistryHelper.GetAvailableVersions();
+                return Request.CreateResponse(HttpStatusCode.OK, new
+                {
+                    success = true,
+                    versions = versions
+                });
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    message = $"Error getting available versions: {ex.Message}",
+                    versions = new List<string>()
+                });
+            }
+        }
+
         [HttpPost]
         [Route("api/SolidWorks/Open")]
-        public HttpResponseMessage OpenSolidWorks()
+        public HttpResponseMessage OpenSolidWorks([FromBody] OpenSolidWorksRequest request)
         {
             try
             {
@@ -39,8 +64,9 @@ namespace WebSW.Controllers
                         }
                     }
 
-                    // Open SolidWorks
-                    _swApp = SolidWorksHelper.OpenSolidWorks();
+                    // Open SolidWorks with specified version
+                    string versionToOpen = request?.Version;
+                    _swApp = SolidWorksHelper.OpenSolidWorks(versionToOpen);
 
                     if (_swApp != null)
                     {
@@ -159,6 +185,11 @@ namespace WebSW.Controllers
                 });
             }
         }
+    }
+
+    public class OpenSolidWorksRequest
+    {
+        public string Version { get; set; }
     }
 }
 
