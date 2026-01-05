@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SolidWorks Controller</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.1em;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        button.close-btn {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        button.close-btn:hover {
+            box-shadow: 0 10px 20px rgba(245, 87, 108, 0.4);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.95em;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .version-info {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 SolidWorks Controller</h1>
+        <p class="subtitle">Open and control SolidWorks from your browser</p>
+        
+        <div class="button-group">
+            <button id="openBtn" onclick="openSolidWorks()">
+                Open SolidWorks
+            </button>
+            <button id="closeBtn" class="close-btn" onclick="closeSolidWorks()">
+                Close SolidWorks
+            </button>
+            <button id="statusBtn" onclick="checkStatus()">
+                Check Status
+            </button>
+        </div>
+
+        <div id="status" class="status info" style="display: none;">
+            Ready to connect...
+        </div>
+
+        <div id="versionInfo" class="version-info" style="display: none;"></div>
+    </div>
+
+    <script>
+        const apiBaseUrl = '/api/SolidWorks';
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'flex';
+        }
+
+        function showLoading(button) {
+            button.disabled = true;
+            button.innerHTML = '<span class="loading"></span>Processing...';
+        }
+
+        function hideLoading(button, text) {
+            button.disabled = false;
+            button.innerHTML = text;
+        }
+
+        async function openSolidWorks() {
+            const btn = document.getElementById('openBtn');
+            showLoading(btn);
+            showStatus('Opening SolidWorks...', 'info');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/Open`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus(data.message, 'success');
+                    if (data.version) {
+                        document.getElementById('versionInfo').textContent = `SolidWorks Version: ${data.version}`;
+                        document.getElementById('versionInfo').style.display = 'block';
+                    }
+                } else {
+                    showStatus(data.message || 'Failed to open SolidWorks', 'error');
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading(btn, 'Open SolidWorks');
+            }
+        }
+
+        async function closeSolidWorks() {
+            const btn = document.getElementById('closeBtn');
+            showLoading(btn);
+            showStatus('Closing SolidWorks...', 'info');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/Close`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus(data.message, 'success');
+                    document.getElementById('versionInfo').style.display = 'none';
+                } else {
+                    showStatus(data.message || 'Failed to close SolidWorks', 'error');
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading(btn, 'Close SolidWorks');
+            }
+        }
+
+        async function checkStatus() {
+            const btn = document.getElementById('statusBtn');
+            showLoading(btn);
+            showStatus('Checking status...', 'info');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/Status`, {
+                    method: 'GET'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    if (data.isOpen) {
+                        showStatus(`SolidWorks is open. Version: ${data.version || 'Unknown'}`, 'success');
+                        document.getElementById('versionInfo').textContent = `SolidWorks Version: ${data.version || 'Unknown'}`;
+                        document.getElementById('versionInfo').style.display = 'block';
+                    } else {
+                        showStatus('SolidWorks is not open.', 'info');
+                        document.getElementById('versionInfo').style.display = 'none';
+                    }
+                } else {
+                    showStatus(data.message || 'Failed to check status', 'error');
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading(btn, 'Check Status');
+            }
+        }
+
+        // Check status on page load
+        window.addEventListener('load', function() {
+            checkStatus();
+        });
+    </script>
+</body>
+</html>
+
