@@ -2,11 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Microsoft.Win32;
+using NLog;
+using MyApp.Logging;
 
 namespace WebSW
 {
     public static class RegistryHelper
     {
+        private static readonly Logger logger;
+
+        static RegistryHelper()
+        {
+            logger = LoggingService.ConfigureLogger(@"C:\wwwroot");
+        }
         /// <summary>
         /// Gets all available SolidWorks versions from the registry.
         /// </summary>
@@ -152,22 +160,36 @@ namespace WebSW
 
         /// <summary>
         /// Gets the ProgID suffix for a SolidWorks version.
+        /// Formula: ProgID Number = Year - 1992
+        /// Note: Versions before 2006 may not have versioned ProgIDs
         /// </summary>
         /// <param name="version">SolidWorks version (e.g., "2025", "2024")</param>
         /// <returns>The ProgID suffix number</returns>
+        /// <exception cref="ArgumentException">Thrown when version is not a valid year format</exception>
         public static string GetProgIdSuffix(string version)
         {
-            switch (version)
+            try
             {
-                case "2018": return "26";
-                case "2019": return "27";
-                case "2020": return "28";
-                case "2021": return "29";
-                case "2022": return "30";
-                case "2023": return "31";
-                case "2024": return "32";
-                case "2025": return "33";
-                default: return "31"; // Default to 2023
+                if (!int.TryParse(version, out int year))
+                {
+                    throw new ArgumentException($"Invalid version format: '{version}'. Expected a valid year (e.g., '2024').");
+                }
+                
+                // Formula: ProgID = Year - 1992
+                // Example: SolidWorks 2024 = 2024 - 1992 = 32
+                int progIdNumber = year - 1992;
+                
+                if (progIdNumber < 0)
+                {
+                    throw new ArgumentException($"Version year {year} is before 1992, which is invalid for SolidWorks.");
+                }
+                
+                return progIdNumber.ToString();
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, $"Error calculating ProgID suffix: {ex.Message}");
+                throw;
             }
         }
     }

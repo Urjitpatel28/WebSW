@@ -3,11 +3,19 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using SolidWorks.Interop.sldworks;
+using NLog;
+using MyApp.Logging;
 
 namespace WebSW
 {
     public static class SolidWorksHelper
     {
+        private static readonly Logger logger;
+
+        static SolidWorksHelper()
+        {
+            logger = LoggingService.ConfigureLogger(@"C:\wwwroot");
+        }
         /// <summary>
         /// Opens the SolidWorks application.
         /// </summary>
@@ -40,58 +48,50 @@ namespace WebSW
                 try
                 {
                     swApp = (ISldWorks)Marshal.GetActiveObject(progId);
-                    Console.WriteLine($"Connected to existing SolidWorks instance (Version {version}).");
+                    logger.Info($"Connected to existing SolidWorks instance (Version {version}).");
                     swApp.Visible = true;
                     return swApp;
                 }
                 catch (COMException)
                 {
-                    Console.WriteLine($"No running SolidWorks instance found for version {version}. Proceeding to launch.");
+                    logger.Info($"No running SolidWorks instance found for version {version}. Proceeding to launch.");
                 }
 
-                // Step 2: Launch SolidWorks via EXE
-                string solidWorksPath = RegistryHelper.GetSolidWorksPath(version);
+                // Step 2: Launch SolidWorks using Activator.CreateInstance
+                logger.Info($"Launching SolidWorks version {version} using ProgID: {progId}");
 
-                if (string.IsNullOrEmpty(solidWorksPath))
+                try
                 {
-                    Console.WriteLine($"SolidWorks installation path not found for version {version}.");
-                    return null;
-                }
-
-                Console.WriteLine($"Starting SolidWorks from: {solidWorksPath}");
-                Process.Start(solidWorksPath);
-
-                // Step 3: Wait for registration and try to attach via GetActiveObject
-                int retryCount = 0;
-                while (swApp == null && retryCount < 12)
-                {
-                    Thread.Sleep(5000); // Wait 5 seconds
-                    try
+                    Type swType = Type.GetTypeFromProgID(progId);
+                    
+                    if (swType == null)
                     {
-                        swApp = (ISldWorks)Marshal.GetActiveObject(progId);
+                        throw new COMException($"ProgID '{progId}' not found. SolidWorks version {version} may not be registered in COM.");
                     }
-                    catch (COMException)
-                    {
-                        Console.WriteLine($"Waiting for COM registration... Retry {retryCount + 1}");
-                    }
-                    retryCount++;
-                }
 
-                // Step 4: Return result
-                if (swApp != null)
-                {
+                    swApp = (ISldWorks)Activator.CreateInstance(swType);
                     swApp.Visible = true;
-                    Console.WriteLine($"SolidWorks started and registered successfully (Version {version}).");
+
+                    logger.Info($"SolidWorks started successfully (Version {version}).");
+                    
+                    // Optional: Wait a moment for full initialization
+                    Thread.Sleep(2000);
                 }
-                else
+                catch (COMException comEx)
                 {
-                    Console.WriteLine($"Failed to connect to SolidWorks after multiple retries (Version {version}).");
+                    logger.Error(comEx, $"COM Error launching SolidWorks: {comEx.Message}");
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.Error(ex, $"Error creating SolidWorks instance: {ex.Message}");
+                    throw;
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error opening SolidWorks: {ex.Message}");
-                Console.WriteLine($"Exception Type: {ex.GetType().Name}");
+                logger.Error(ex, $"Error opening SolidWorks: {ex.Message}");
+                logger.Debug($"Exception Type: {ex.GetType().Name}");
                 return null;
             }
             
@@ -117,11 +117,11 @@ namespace WebSW
                     GC.WaitForPendingFinalizers();
                     GC.Collect();
                     
-                    Console.WriteLine("SolidWorks closed and resources released.");
+                    logger.Info("SolidWorks closed and resources released.");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error closing SolidWorks: {ex.Message}");
+                    logger.Error(ex, $"Error closing SolidWorks: {ex.Message}");
                 }
             }
         }

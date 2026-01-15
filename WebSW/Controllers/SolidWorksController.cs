@@ -4,6 +4,8 @@ using System.Net;
 using System.Net.Http;
 using System.Web.Http;
 using SolidWorks.Interop.sldworks;
+using NLog;
+using MyApp.Logging;
 
 namespace WebSW.Controllers
 {
@@ -11,6 +13,12 @@ namespace WebSW.Controllers
     {
         private static ISldWorks _swApp = null;
         private static readonly object _lockObject = new object();
+        private static readonly Logger logger;
+
+        static SolidWorksController()
+        {
+            logger = LoggingService.ConfigureLogger(@"C:\wwwroot");
+        }
 
         [HttpGet]
         [Route("api/SolidWorks/AvailableVersions")]
@@ -27,6 +35,7 @@ namespace WebSW.Controllers
             }
             catch (Exception ex)
             {
+                logger.Error(ex, $"Error getting available versions: {ex.Message}");
                 return Request.CreateResponse(HttpStatusCode.InternalServerError, new
                 {
                     success = false,
@@ -90,6 +99,7 @@ namespace WebSW.Controllers
             }
             catch (Exception ex)
             {
+                logger.Error(ex, $"Error opening SolidWorks: {ex.Message}");
                 return Request.CreateResponse(HttpStatusCode.InternalServerError, new
                 {
                     success = false,
@@ -128,6 +138,7 @@ namespace WebSW.Controllers
             }
             catch (Exception ex)
             {
+                logger.Error(ex, $"Error closing SolidWorks: {ex.Message}");
                 return Request.CreateResponse(HttpStatusCode.InternalServerError, new
                 {
                     success = false,
@@ -178,6 +189,7 @@ namespace WebSW.Controllers
             }
             catch (Exception ex)
             {
+                logger.Error(ex, $"Error getting status: {ex.Message}");
                 return Request.CreateResponse(HttpStatusCode.InternalServerError, new
                 {
                     success = false,
