@@ -5,9 +5,11 @@ A web application that allows you to open and control SolidWorks from your web b
 ## Features
 
 - 🌐 **Web Interface**: Beautiful, modern web page with buttons to control SolidWorks
+- 🔒 **Session-Based Locking**: Prevent multiple devices from controlling SolidWorks simultaneously
 - 🔧 **Open SolidWorks**: Click a button to open SolidWorks programmatically
 - ❌ **Close SolidWorks**: Close SolidWorks from the web interface
 - 📊 **Status Check**: Check if SolidWorks is currently running
+- 🔄 **Auto-Heartbeat**: Maintains control session with automatic heartbeat
 - 📱 **Responsive Design**: Works on desktop and mobile devices
 
 ## Project Structure
@@ -55,17 +57,49 @@ WebSW/
    - Your default browser will open automatically
 
 4. **Use the Web Interface**
+   - Click **"Request Control"** to acquire exclusive access to SolidWorks
+   - Once you have control, the SolidWorks operation buttons will be enabled
    - Click **"Open SolidWorks"** to open SolidWorks
    - Click **"Close SolidWorks"** to close it
    - Click **"Check Status"** to see if SolidWorks is running
+   - Click **"Release Control"** when you're done to allow other devices to take control
+
+## Session-Based Locking
+
+The application implements a session-based locking mechanism to prevent multiple devices from controlling SolidWorks simultaneously:
+
+### How It Works
+
+1. **Request Control**: Before you can operate SolidWorks, you must request control by clicking the "Request Control" button
+2. **Exclusive Access**: Only one device can have control at a time
+3. **Automatic Heartbeat**: Once you have control, the application sends a heartbeat every 30 seconds to maintain the session
+4. **Auto-Expiry**: If a device becomes inactive for 5 minutes, the lock is automatically released
+5. **Release Control**: You can manually release control to allow other devices to take over
+6. **Auto-Release on Close**: When you close the browser tab, the lock is automatically released
+
+### Key Features
+
+- **Session ID**: Each device/browser gets a unique session ID stored in a cookie
+- **Lock Timeout**: Locks expire after 5 minutes of inactivity
+- **Heartbeat**: Keeps the session alive every 30 seconds
+- **Visual Feedback**: Clear indication of whether you have control or not
+- **Conflict Prevention**: Cannot perform operations without acquiring the lock first
 
 ## API Endpoints
 
 The application provides the following REST API endpoints:
 
-- `POST /api/SolidWorks/Open` - Opens SolidWorks
-- `POST /api/SolidWorks/Close` - Closes SolidWorks
-- `GET /api/SolidWorks/Status` - Gets the current status
+### Session Management
+- `POST /api/SolidWorks/AcquireLock` - Request control of SolidWorks
+- `POST /api/SolidWorks/ReleaseLock` - Release control
+- `POST /api/SolidWorks/Heartbeat` - Extend lock expiry (sent automatically)
+- `GET /api/SolidWorks/LockStatus` - Check lock status
+
+### SolidWorks Operations
+- `GET /api/SolidWorks/AvailableVersions` - Get installed SolidWorks versions
+- `POST /api/SolidWorks/Open` - Opens SolidWorks (requires lock)
+- `POST /api/SolidWorks/Close` - Closes SolidWorks (requires lock)
+- `GET /api/SolidWorks/Status` - Gets the current SolidWorks status
 
 ## SolidWorks Version
 

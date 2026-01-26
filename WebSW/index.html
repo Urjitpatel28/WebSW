@@ -116,6 +116,12 @@
             border: 1px solid #bee5eb;
         }
 
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
         .loading {
             display: inline-block;
             width: 20px;
@@ -174,12 +180,73 @@
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
+
+        .lock-status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 0.95em;
+            background: #f8f9fa;
+            color: #333;
+            border: 2px solid #e0e0e0;
+        }
+
+        .lock-status.has-lock {
+            background: #d4edda;
+            color: #155724;
+            border-color: #c3e6cb;
+        }
+
+        .lock-status.no-lock {
+            background: #fff3cd;
+            color: #856404;
+            border-color: #ffeaa7;
+        }
+
+        .control-buttons button {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .control-buttons.unlocked button {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        button.acquire-lock-btn {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        button.acquire-lock-btn:hover {
+            box-shadow: 0 10px 20px rgba(56, 239, 125, 0.4);
+        }
+
+        button.release-lock-btn {
+            background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%);
+        }
+
+        button.release-lock-btn:hover {
+            box-shadow: 0 10px 20px rgba(238, 9, 121, 0.4);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🔧 SolidWorks Controller</h1>
         <p class="subtitle">Open and control SolidWorks from your browser</p>
+        
+        <div id="lockStatus" class="lock-status no-lock">
+            <strong>Control Status:</strong> <span id="lockStatusText">Checking...</span>
+        </div>
+
+        <div class="button-group">
+            <button id="acquireLockBtn" class="acquire-lock-btn" onclick="acquireLock()">
+                Request Control
+            </button>
+            <button id="releaseLockBtn" class="release-lock-btn" onclick="releaseLock()" style="display: none;">
+                Release Control
+            </button>
+        </div>
         
         <div class="version-selector">
             <label for="versionSelect">Select SolidWorks Version:</label>
@@ -188,7 +255,7 @@
             </select>
         </div>
         
-        <div class="button-group">
+        <div class="button-group control-buttons" id="controlButtons">
             <button id="openBtn" onclick="openSolidWorks()">
                 Open SolidWorks
             </button>
@@ -209,6 +276,8 @@
 
     <script>
         const apiBaseUrl = '/api/SolidWorks';
+        let hasLock = false;
+        let heartbeatInterval = null;
 
         function showStatus(message, type = 'info') {
             const statusDiv = document.getElementById('status');
@@ -219,13 +288,167 @@
 
         function showLoading(button) {
             button.disabled = true;
+            const originalText = button.textContent;
+            button.setAttribute('data-original-text', originalText);
             button.innerHTML = '<span class="loading"></span>Processing...';
         }
 
-        function hideLoading(button, text) {
+        function hideLoading(button) {
             button.disabled = false;
-            button.innerHTML = text;
+            const originalText = button.getAttribute('data-original-text') || 'Button';
+            button.innerHTML = originalText;
         }
+
+        function updateLockUI(lockStatus) {
+            hasLock = lockStatus;
+            const lockStatusDiv = document.getElementById('lockStatus');
+            const lockStatusText = document.getElementById('lockStatusText');
+            const acquireLockBtn = document.getElementById('acquireLockBtn');
+            const releaseLockBtn = document.getElementById('releaseLockBtn');
+            const controlButtons = document.getElementById('controlButtons');
+
+            if (hasLock) {
+                lockStatusDiv.className = 'lock-status has-lock';
+                lockStatusText.textContent = 'You have control of SolidWorks';
+                acquireLockBtn.style.display = 'none';
+                releaseLockBtn.style.display = 'block';
+                controlButtons.classList.add('unlocked');
+                startHeartbeat();
+            } else {
+                lockStatusDiv.className = 'lock-status no-lock';
+                lockStatusText.textContent = 'Another device may be in control - Request control to operate';
+                acquireLockBtn.style.display = 'block';
+                releaseLockBtn.style.display = 'none';
+                controlButtons.classList.remove('unlocked');
+                stopHeartbeat();
+            }
+        }
+
+        async function checkLockStatus() {
+            try {
+                const response = await fetch(`${apiBaseUrl}/LockStatus`, {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    updateLockUI(data.hasLock);
+                }
+            } catch (error) {
+                console.error('Error checking lock status:', error);
+            }
+        }
+
+        async function acquireLock() {
+            const btn = document.getElementById('acquireLockBtn');
+            showLoading(btn);
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/AcquireLock`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus('Control acquired! You can now operate SolidWorks.', 'success');
+                    updateLockUI(true);
+                } else {
+                    showStatus(data.message || 'Failed to acquire control. Another device is in control.', 'warning');
+                    updateLockUI(false);
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading(btn);
+            }
+        }
+
+        async function releaseLock() {
+            const btn = document.getElementById('releaseLockBtn');
+            showLoading(btn);
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/ReleaseLock`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus('Control released. Other devices can now take control.', 'info');
+                    updateLockUI(false);
+                } else {
+                    showStatus(data.message || 'Failed to release control', 'error');
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading(btn);
+            }
+        }
+
+        function startHeartbeat() {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+            }
+
+            heartbeatInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${apiBaseUrl}/Heartbeat`, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (!data.success) {
+                        // Lost the lock
+                        hasLock = false;
+                        updateLockUI(false);
+                        showStatus('Control was lost. Another device may have taken over.', 'warning');
+                    }
+                } catch (error) {
+                    console.error('Heartbeat error:', error);
+                }
+            }, 30000); // Every 30 seconds
+        }
+
+        function stopHeartbeat() {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+        }
+
+        // Release lock when page is closed
+        window.addEventListener('beforeunload', () => {
+            if (hasLock) {
+                navigator.sendBeacon(`${apiBaseUrl}/ReleaseLock`);
+            }
+        });
+
+        // Release lock when page visibility changes (tab switched)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && hasLock) {
+                // Optionally release lock when tab is hidden
+                // Uncomment the line below if you want to auto-release on tab switch
+                // releaseLock();
+            }
+        });
 
         async function loadAvailableVersions() {
             try {
@@ -260,6 +483,11 @@
         }
 
         async function openSolidWorks() {
+            if (!hasLock) {
+                showStatus('You must acquire control first before opening SolidWorks.', 'warning');
+                return;
+            }
+
             const btn = document.getElementById('openBtn');
             const versionSelect = document.getElementById('versionSelect');
             const selectedVersion = versionSelect.value;
@@ -275,6 +503,7 @@
             try {
                 const response = await fetch(`${apiBaseUrl}/Open`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: {
                         'Content-Type': 'application/json'
                     },
@@ -293,15 +522,23 @@
                     }
                 } else {
                     showStatus(data.message || 'Failed to open SolidWorks', 'error');
+                    if (response.status === 403) {
+                        updateLockUI(false);
+                    }
                 }
             } catch (error) {
                 showStatus(`Error: ${error.message}`, 'error');
             } finally {
-                hideLoading(btn, 'Open SolidWorks');
+                hideLoading(btn);
             }
         }
 
         async function closeSolidWorks() {
+            if (!hasLock) {
+                showStatus('You must have control to close SolidWorks.', 'warning');
+                return;
+            }
+
             const btn = document.getElementById('closeBtn');
             showLoading(btn);
             showStatus('Closing SolidWorks...', 'info');
@@ -309,6 +546,7 @@
             try {
                 const response = await fetch(`${apiBaseUrl}/Close`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: {
                         'Content-Type': 'application/json'
                     }
@@ -321,11 +559,14 @@
                     document.getElementById('versionInfo').style.display = 'none';
                 } else {
                     showStatus(data.message || 'Failed to close SolidWorks', 'error');
+                    if (response.status === 403) {
+                        updateLockUI(false);
+                    }
                 }
             } catch (error) {
                 showStatus(`Error: ${error.message}`, 'error');
             } finally {
-                hideLoading(btn, 'Close SolidWorks');
+                hideLoading(btn);
             }
         }
 
@@ -364,6 +605,10 @@
         window.addEventListener('load', function() {
             loadAvailableVersions();
             checkStatus();
+            checkLockStatus();
+            
+            // Periodically check lock status
+            setInterval(checkLockStatus, 10000); // Every 10 seconds
         });
     </script>
 </body>
