@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Web;
 using System.Web.Http;
 using SolidWorks.Interop.sldworks;
@@ -21,6 +23,9 @@ namespace WebSW.Controllers
         private static string _currentSessionId = null;
         private static DateTime _lockExpiry = DateTime.MinValue;
         private static readonly TimeSpan _lockTimeout = TimeSpan.FromMinutes(5);
+
+        // Cube file registry: fileId -> absolute temp path on server
+        private static readonly Dictionary<string, string> _cubeFiles = new Dictionary<string, string>();
 
         static SolidWorksController()
         {
@@ -452,6 +457,145 @@ namespace WebSW.Controllers
                 {
                     success = false,
                     message = $"Error getting status: {ex.Message}"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Creates a 100 mm cube in SolidWorks, saves it as a .SLDPRT temp file,
+        /// and returns a fileId that can be used to download it.
+        /// Requires the session lock.
+        /// </summary>
+        [HttpPost]
+        [Route("api/SolidWorks/CreateCube")]
+        public HttpResponseMessage CreateCube()
+        {
+            try
+            {
+                string sessionId = GetSessionId();
+
+                if (!HasSessionLock(sessionId))
+                {
+                    return Request.CreateResponse(HttpStatusCode.Forbidden, new
+                    {
+                        success = false,
+                        message = "You must acquire the lock before creating a cube."
+                    });
+                }
+
+                lock (_lockObject)
+                {
+                    if (_swApp == null)
+                    {
+                        return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                        {
+                            success = false,
+                            message = "SolidWorks is not open. Please open SolidWorks first."
+                        });
+                    }
+
+                    logger.Info($"Session {sessionId} requested cube creation.");
+
+                    string filePath = SolidWorksHelper.CreateCube(_swApp);
+                    string fileId = Guid.NewGuid().ToString("N");
+
+                    lock (_cubeFiles)
+                    {
+                        _cubeFiles[fileId] = filePath;
+                    }
+
+                    logger.Info($"Cube created. fileId={fileId}, path={filePath}");
+
+                    return Request.CreateResponse(HttpStatusCode.OK, new
+                    {
+                        success = true,
+                        message = "Cube created successfully!",
+                        fileId = fileId
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, $"Error creating cube: {ex.Message}");
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    message = $"Error creating cube: {ex.Message}"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Streams the previously created cube .SLDPRT file as a download and deletes
+        /// the temp file afterwards.
+        /// </summary>
+        [HttpGet]
+        [Route("api/SolidWorks/DownloadCube")]
+        public HttpResponseMessage DownloadCube(string fileId)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(fileId))
+                {
+                    return Request.CreateResponse(HttpStatusCode.BadRequest, new
+                    {
+                        success = false,
+                        message = "fileId is required."
+                    });
+                }
+
+                string filePath;
+                lock (_cubeFiles)
+                {
+                    if (!_cubeFiles.TryGetValue(fileId, out filePath))
+                    {
+                        return Request.CreateResponse(HttpStatusCode.NotFound, new
+                        {
+                            success = false,
+                            message = "File not found. The cube may not have been created yet or the ID is invalid."
+                        });
+                    }
+                }
+
+                if (!File.Exists(filePath))
+                {
+                    return Request.CreateResponse(HttpStatusCode.Gone, new
+                    {
+                        success = false,
+                        message = "The cube file no longer exists on the server."
+                    });
+                }
+
+                logger.Info($"Serving cube download for fileId={fileId}, path={filePath}");
+
+                // Read into memory so we can delete the temp file before sending
+                byte[] fileBytes = File.ReadAllBytes(filePath);
+
+                try { File.Delete(filePath); } catch (Exception ex) { logger.Warn(ex, $"Could not delete temp cube file: {filePath}"); }
+                lock (_cubeFiles) { _cubeFiles.Remove(fileId); }
+
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(fileBytes)
+                };
+
+                response.Content.Headers.ContentType =
+                    new MediaTypeHeaderValue("application/octet-stream");
+                response.Content.Headers.ContentDisposition =
+                    new ContentDispositionHeaderValue("attachment")
+                    {
+                        FileName = "cube.SLDPRT"
+                    };
+
+                return response;
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, $"Error downloading cube: {ex.Message}");
+                return Request.CreateResponse(HttpStatusCode.InternalServerError, new
+                {
+                    success = false,
+                    message = $"Error downloading cube: {ex.Message}"
                 });
             }
         }

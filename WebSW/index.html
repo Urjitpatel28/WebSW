@@ -228,6 +228,22 @@
         button.release-lock-btn:hover {
             box-shadow: 0 10px 20px rgba(238, 9, 121, 0.4);
         }
+
+        button.cube-btn {
+            background: linear-gradient(135deg, #0072ff 0%, #00c6ff 100%);
+        }
+
+        button.cube-btn:hover {
+            box-shadow: 0 10px 20px rgba(0, 114, 255, 0.4);
+        }
+
+        button.cube-download-btn {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        button.cube-download-btn:hover {
+            box-shadow: 0 10px 20px rgba(56, 239, 125, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -264,6 +280,9 @@
             </button>
             <button id="statusBtn" onclick="checkStatus()">
                 Check Status
+            </button>
+            <button id="cubeBtn" class="cube-btn" onclick="handleCubeButton()">
+                Create Cube
             </button>
         </div>
 
@@ -600,6 +619,68 @@
                 hideLoading(btn, 'Check Status');
             }
         }
+
+        // ── Cube feature ────────────────────────────────────────────────────────
+        let lastCubeFileId = null;
+
+        function handleCubeButton() {
+            if (lastCubeFileId) {
+                downloadCube(lastCubeFileId);
+            } else {
+                createCube();
+            }
+        }
+
+        async function createCube() {
+            if (!hasLock) {
+                showStatus('You must acquire control first before creating a cube.', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('cubeBtn');
+            showLoading(btn);
+            showStatus('Creating cube in SolidWorks...', 'info');
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/CreateCube`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    lastCubeFileId = data.fileId;
+                    showStatus('Cube created! Click "Download Cube" to save the file.', 'success');
+                    btn.textContent = 'Download Cube (.SLDPRT)';
+                    btn.className = 'cube-download-btn';
+                    btn.setAttribute('data-original-text', 'Download Cube (.SLDPRT)');
+                } else {
+                    showStatus(data.message || 'Failed to create cube.', 'error');
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading(btn);
+            }
+        }
+
+        function downloadCube(fileId) {
+            // Navigate to the download URL — browser handles the file save dialog
+            window.location.href = `${apiBaseUrl}/DownloadCube?fileId=${encodeURIComponent(fileId)}`;
+
+            // Reset button state after triggering the download
+            setTimeout(() => {
+                lastCubeFileId = null;
+                const btn = document.getElementById('cubeBtn');
+                btn.textContent = 'Create Cube';
+                btn.className = 'cube-btn';
+                btn.setAttribute('data-original-text', 'Create Cube');
+                showStatus('Cube downloaded. You can create a new one.', 'info');
+            }, 1500);
+        }
+        // ── End cube feature ────────────────────────────────────────────────────
 
         // Load versions and check status on page load
         window.addEventListener('load', function() {
